@@ -42,6 +42,8 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const roadsLayerRef = useRef<L.TileLayer | null>(null);
+  const labelsLayerRef = useRef<L.TileLayer | null>(null);
 
   // Layer references
   const userMarkerRef = useRef<L.Marker | null>(null);
@@ -119,32 +121,73 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       map.removeLayer(tileLayerRef.current);
       tileLayerRef.current = null;
     }
-
-    let url = '';
-    const options: L.TileLayerOptions = {
-      maxZoom: 19,
-      minZoom: 2,
-    };
-
-    if (mapStyle === 'satellite') {
-      url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-      options.tileSize = 256;
-      options.zoomOffset = 0;
-    } else if (isUsingGeoapify && mapStyle !== 'osm-carto') {
-      url = `https://maps.geoapify.com/v1/tile/${mapStyle}/{z}/{x}/{y}@2x.png?apiKey=${resolvedGeoapifyKey}`;
-      options.tileSize = 512;
-      options.zoomOffset = -1;
-    } else {
-      url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    if (roadsLayerRef.current) {
+      map.removeLayer(roadsLayerRef.current);
+      roadsLayerRef.current = null;
+    }
+    if (labelsLayerRef.current) {
+      map.removeLayer(labelsLayerRef.current);
+      labelsLayerRef.current = null;
     }
 
-    const tileLayer = L.tileLayer(url, options);
-    tileLayer.addTo(map);
-    tileLayerRef.current = tileLayer;
+    if (mapStyle === 'satellite') {
+      // 1. Base Satellite Imagery (ArcGIS World Imagery)
+      const satUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      const satLayer = L.tileLayer(satUrl, {
+        maxZoom: 19,
+        minZoom: 2,
+        tileSize: 256,
+        zoomOffset: 0,
+      });
+      satLayer.addTo(map);
+      tileLayerRef.current = satLayer;
+
+      // 2. High-contrast Roads & Highways Overlay
+      const roadsUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
+      const roadsLayer = L.tileLayer(roadsUrl, {
+        maxZoom: 19,
+        minZoom: 2,
+        tileSize: 256,
+        zoomOffset: 0,
+        opacity: 0.9,
+      });
+      roadsLayer.addTo(map);
+      roadsLayerRef.current = roadsLayer;
+
+      // 3. Clear Place Names, Cities, Towns, and Landmark Labels Overlay
+      const labelsUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+      const labelsLayer = L.tileLayer(labelsUrl, {
+        maxZoom: 19,
+        minZoom: 2,
+        tileSize: 256,
+        zoomOffset: 0,
+        opacity: 1.0,
+      });
+      labelsLayer.addTo(map);
+      labelsLayerRef.current = labelsLayer;
+    } else if (isUsingGeoapify && mapStyle !== 'osm-carto') {
+      const url = `https://maps.geoapify.com/v1/tile/${mapStyle}/{z}/{x}/{y}@2x.png?apiKey=${resolvedGeoapifyKey}`;
+      const tileLayer = L.tileLayer(url, {
+        maxZoom: 19,
+        minZoom: 2,
+        tileSize: 512,
+        zoomOffset: -1,
+      });
+      tileLayer.addTo(map);
+      tileLayerRef.current = tileLayer;
+    } else {
+      const url = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      const tileLayer = L.tileLayer(url, {
+        maxZoom: 19,
+        minZoom: 2,
+      });
+      tileLayer.addTo(map);
+      tileLayerRef.current = tileLayer;
+    }
 
     const tilePane = containerRef.current?.querySelector('.leaflet-tile-pane') as HTMLElement | null;
     if (tilePane) {
-      tilePane.style.filter = mapStyle === 'satellite' ? 'contrast(1.05) brightness(0.98)' : 'none';
+      tilePane.style.filter = mapStyle === 'satellite' ? 'contrast(1.03) brightness(0.98)' : 'none';
     }
   }, [mapStyle, resolvedGeoapifyKey, isUsingGeoapify]);
 
