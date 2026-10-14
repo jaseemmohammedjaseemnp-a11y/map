@@ -75,27 +75,30 @@ export function generateFallbackSteps(distanceMeters: number): RouteStep[] {
 // In-memory cache to eliminate duplicate network requests and prevent flickering
 const routeCache = new Map<string, RouteResult>();
 
-function getCacheKey(start: Coordinates, end: Coordinates, mode: TravelMode): string {
-  return `${start.lat.toFixed(5)},${start.lng.toFixed(5)}_${end.lat.toFixed(5)},${end.lng.toFixed(5)}_${mode}`;
+function getCacheKey(start: Coordinates, end: Coordinates, mode: TravelMode, waypoints: Coordinates[] = []): string {
+  const wpStr = waypoints.map(w => `${w.lat.toFixed(5)},${w.lng.toFixed(5)}`).join('-');
+  return `${start.lat.toFixed(5)},${start.lng.toFixed(5)}_${wpStr}_${end.lat.toFixed(5)},${end.lng.toFixed(5)}_${mode}`;
 }
 
 /**
- * Fetch directions and high-precision road geometry between two points
+ * Fetch directions and high-precision road geometry between points with optional intermediate stops
  * First attempts Geoapify Routing API; seamlessly falls back to OSRM road network.
  */
 export async function getDirections(
   start: Coordinates,
   end: Coordinates,
   mode: TravelMode = 'transit',
-  apiKey?: string
+  apiKey?: string,
+  waypoints: Coordinates[] = []
 ): Promise<RouteResult> {
-  const cacheKey = getCacheKey(start, end, mode);
+  const cacheKey = getCacheKey(start, end, mode, waypoints);
   const cached = routeCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const geoapifyKey = getGeoapifyApiKey(apiKey);
+  const allPoints = [start, ...waypoints, end];
 
   // 1. Try Geoapify Routing API
   if (geoapifyKey) {
@@ -109,7 +112,8 @@ export async function getDirections(
           ? 'transit'
           : 'drive';
 
-      const url = `https://api.geoapify.com/v1/routing?waypoints=${start.lat},${start.lng}|${end.lat},${end.lng}&mode=${geoapifyMode}&apiKey=${geoapifyKey}&details=instruction_details`;
+      const waypointsParam = allPoints.map(pt => `${pt.lat},${pt.lng}`).join('|');
+      const url = `https://api.geoapify.com/v1/routing?waypoints=${waypointsParam}&mode=${geoapifyMode}&apiKey=${geoapifyKey}&details=instruction_details`;
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6500);
@@ -134,14 +138,22 @@ export async function getDirections(
           const durationSeconds = Math.round(props.time || 0);
 
           let parsedSteps: RouteStep[] = [];
-          if (props.legs && props.legs[0]?.steps?.length > 0) {
-            parsedSteps = props.legs[0].steps.map((st: any) => ({
-              instruction: st.instruction?.text || 'Continue along the route',
-              distanceMeters: st.distance || 0,
-              durationSeconds: st.time || 0,
-              icon: st.instruction?.type === 'Turn' ? '↪️' : '⬆️',
-            }));
-          } else {
+          if (props.legs && props.legs.length > 0) {
+            props.legs.forEach((leg: any) => {
+              if (leg.steps && leg.steps.length > 0) {
+                leg.steps.forEach((st: any) => {
+                  parsedSteps.push({
+                    instruction: st.instruction?.text || 'Continue along the route',
+                    distanceMeters: st.distance || 0,
+                    durationSeconds: st.time || 0,
+                    icon: st.instruction?.type === 'Turn' ? '↪️' : '⬆️',
+                  });
+                });
+              }
+            });
+          }
+
+          if (parsedSteps.length === 0) {
             parsedSteps = generateFallbackSteps(distanceMeters);
           }
 
@@ -167,7 +179,8 @@ export async function getDirections(
   // 2. High-precision OSRM Road Fallback
   const osrmProfile = mode === 'walking' ? 'walking' : mode === 'bike' ? 'bike' : 'driving';
   try {
-    const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson&steps=true`;
+    const osrmCoords = allPoints.map(pt => `${pt.lng},${pt.lat}`).join(';');
+    const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${osrmCoords}?overview=full&geometries=geojson&steps=true`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6500);
@@ -187,14 +200,22 @@ export async function getDirections(
         }
 
         let parsedSteps: RouteStep[] = [];
-        if (route.legs && route.legs[0]?.steps?.length > 0) {
-          parsedSteps = route.legs[0].steps.map((st: any) => ({
-            instruction: st.maneuver?.instruction || `Head along ${st.name || 'the road'}`,
-            distanceMeters: Math.round(st.distance || 0),
-            durationSeconds: Math.round(st.duration || 0),
-            icon: st.maneuver?.type?.includes('turn') ? '↪️' : '⬆️',
-          }));
-        } else {
+        if (route.legs && route.legs.length > 0) {
+          route.legs.forEach((leg: any) => {
+            if (leg.steps && leg.steps.length > 0) {
+              leg.steps.forEach((st: any) => {
+                parsedSteps.push({
+                  instruction: st.maneuver?.instruction || `Head along ${st.name || 'the road'}`,
+                  distanceMeters: Math.round(st.distance || 0),
+                  durationSeconds: Math.round(st.duration || 0),
+                  icon: st.maneuver?.type?.includes('turn') ? '↪️' : '⬆️',
+                });
+              });
+            }
+          });
+        }
+
+        if (parsedSteps.length === 0) {
           parsedSteps = generateFallbackSteps(route.distance);
         }
 

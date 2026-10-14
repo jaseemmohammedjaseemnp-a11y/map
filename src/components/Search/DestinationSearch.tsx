@@ -35,6 +35,8 @@ interface DestinationSearchProps {
   onStartJourney?: () => void;
   onTestAlarm?: () => void;
   onSimulate?: () => void;
+  stops?: Destination[];
+  onRemoveStop?: (index: number) => void;
   isTracking?: boolean;
   className?: string;
 }
@@ -74,7 +76,9 @@ export const DestinationSearch: React.FC<DestinationSearchProps> = ({
   onStartJourney,
   onTestAlarm,
   onSimulate: _onSimulate,
-  isTracking = false,
+  isTracking: _isTracking = false,
+  stops = [],
+  onRemoveStop,
   className = '',
 }) => {
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
@@ -345,6 +349,37 @@ export const DestinationSearch: React.FC<DestinationSearchProps> = ({
             </div>
           )}
         </div>
+
+        {/* Optional Intermediate Stops */}
+        {stops && stops.length > 0 && (
+          <div className="flex flex-col gap-1.5 pt-2 border-t border-[#ded5c5]/80">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#687a71]">
+              Stops along route ({stops.length})
+            </span>
+            {stops.map((stop, sIdx) => (
+              <div
+                key={`${stop.lat}-${stop.lng}-${sIdx}`}
+                className="flex items-center justify-between gap-1.5 bg-[#FFF8ED] px-2.5 py-1.5 rounded-xl border border-[#ded5c5] text-xs shadow-2xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-4 h-4 rounded-full bg-[#174C3C] text-white text-[10px] flex items-center justify-center font-bold shrink-0">
+                    {sIdx + 1}
+                  </span>
+                  <span className="text-xs font-semibold truncate text-[#14221d]">{stop.name}</span>
+                </div>
+                {onRemoveStop && (
+                  <button
+                    onClick={() => onRemoveStop(sIdx)}
+                    className="text-[#8a9990] hover:text-red-600 p-0.5 rounded cursor-pointer transition-colors"
+                    title="Remove stop"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Travel Mode Pills Row */}

@@ -8,6 +8,7 @@ interface FallbackMapViewProps {
   currentPosition: GPSReading | null;
   origin?: Destination | null;
   destination: Destination | null;
+  stops?: Destination[];
   routeCoordinates?: [number, number][] | null;
   routeInfo?: RouteResult | null;
   radiusMeters: number;
@@ -26,6 +27,7 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
   currentPosition,
   origin,
   destination,
+  stops = [],
   routeCoordinates,
   routeInfo,
   radiusMeters,
@@ -51,6 +53,7 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
   const originMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
   const destRadiusCircleRef = useRef<L.Circle | null>(null);
+  const stopMarkersRef = useRef<L.Marker[]>([]);
   const routeLineRef = useRef<L.Polyline | null>(null);
   const routeGlowRef = useRef<L.Polyline | null>(null);
   const midRouteMarkerRef = useRef<L.Marker | null>(null);
@@ -371,6 +374,42 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       });
     }
   }, [destination, radiusMeters, isArrived]);
+
+  // Update Intermediate Stop Markers along the route
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    stopMarkersRef.current.forEach((m) => map.removeLayer(m));
+    stopMarkersRef.current = [];
+
+    if (!stops || stops.length === 0) return;
+
+    const newMarkers = stops.map((stopItem, idx) => {
+      const stopLatLng: L.LatLngTuple = [stopItem.lat, stopItem.lng];
+      const stopIcon = L.divIcon({
+        className: 'bg-transparent border-none',
+        html: `
+          <div style="position: relative; width: 32px; height: 40px; pointer-events: none;">
+            <div style="position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); font-weight: 800; font-size: 11px; color: #14221d; background: rgba(255,255,255,0.96); padding: 2px 8px; border-radius: 9999px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); white-space: nowrap; border: 1.5px solid #d97706; display: flex; align-items: center; gap: 4px;">
+              <span style="color: #d97706; font-weight: 900;">Stop ${idx + 1}:</span>
+              <span>${stopItem.name}</span>
+            </div>
+            <svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 3px 6px rgba(0,0,0,0.32));">
+              <path d="M16 0C7.16344 0 0 7.16344 0 16C0 25.5 14.4 38.8 15.1 39.4C15.6 39.9 16.4 39.9 16.9 39.4C17.6 38.8 32 25.5 32 16C32 7.16344 24.8366 0 16 0Z" fill="#d97706"/>
+              <circle cx="16" cy="16" r="7.5" fill="#ffffff"/>
+              <text x="16" y="20" text-anchor="middle" font-size="11" font-weight="900" fill="#d97706">${idx + 1}</text>
+            </svg>
+          </div>
+        `,
+        iconSize: [32, 40],
+        iconAnchor: [16, 40],
+      });
+      return L.marker(stopLatLng, { icon: stopIcon, zIndexOffset: 960 }).addTo(map);
+    });
+
+    stopMarkersRef.current = newMarkers;
+  }, [stops]);
 
   // Update Route Polyline & Mid-Route Duration Pill with stable bounds fitting
   useEffect(() => {

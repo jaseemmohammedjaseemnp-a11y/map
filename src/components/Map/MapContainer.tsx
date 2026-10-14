@@ -11,6 +11,7 @@ interface MapContainerProps {
   currentPosition: GPSReading | null;
   origin?: Destination | null;
   destination: Destination | null;
+  stops?: Destination[];
   routeCoordinates?: [number, number][] | null;
   routeInfo?: RouteResult | null;
   radiusMeters: number;
@@ -31,6 +32,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
   currentPosition,
   origin,
   destination,
+  stops = [],
   routeCoordinates,
   routeInfo,
   radiusMeters,
@@ -105,6 +107,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
           currentPosition={currentPosition}
           origin={origin}
           destination={destination}
+          stops={stops}
           routeCoordinates={routeCoordinates}
           routeInfo={routeInfo}
           radiusMeters={radiusMeters}

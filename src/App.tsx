@@ -35,6 +35,7 @@ import { TravelingDirectionsHUD } from "./components/Navigation/TravelingDirecti
 import { SettingsModal } from "./components/Settings/SettingsModal";
 import { SavedPlacesModal } from "./components/Saved/SavedPlacesModal";
 import { HistoryModal } from "./components/History/HistoryModal";
+import { ChangeLocationPrompt } from "./components/Map/ChangeLocationPrompt";
 
 export const App: React.FC = () => {
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
@@ -45,6 +46,9 @@ export const App: React.FC = () => {
   const [journeyStatus, setJourneyStatus] = useState<JourneyStatus>("idle");
   const [origin, setOrigin] = useState<Destination | null>(null);
   const [destination, setDestination] = useState<Destination | null>(null);
+  const [stops, setStops] = useState<Destination[]>([]);
+  const [pendingPlace, setPendingPlace] = useState<Destination | null>(null);
+  const [isChangePromptOpen, setIsChangePromptOpen] = useState<boolean>(false);
   const [travelMode, setTravelMode] = useState<TravelMode>("driving");
   const [routeInfo, setRouteInfo] = useState<RouteResult | null>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState<boolean>(false);
@@ -153,6 +157,9 @@ export const App: React.FC = () => {
 
   const handleClearDestination = () => {
     setDestination(null);
+    setStops([]);
+    setPendingPlace(null);
+    setIsChangePromptOpen(false);
     saveLastDestination(null);
     setRouteInfo(null);
     setDistanceToDestMeters(null);
@@ -189,7 +196,48 @@ export const App: React.FC = () => {
         address = realAddress;
       }
     }
-    handleSelectDestination({ name: placeName, address, lat: coords.lat, lng: coords.lng });
+    const clickedPlace: Destination = { name: placeName, address, lat: coords.lat, lng: coords.lng };
+
+    // Accidental click protection:
+    // If no destination is set yet, directly set as destination.
+    // If destination already exists, DO NOT accidentally overwrite it! Ask permission.
+    if (!destination) {
+      handleSelectDestination(clickedPlace);
+      return;
+    }
+
+    setPendingPlace(clickedPlace);
+    setIsChangePromptOpen(true);
+  };
+
+  const handleConfirmChangeDestination = () => {
+    if (!pendingPlace) return;
+    handleSelectDestination(pendingPlace);
+    setPendingPlace(null);
+    setIsChangePromptOpen(false);
+  };
+
+  const handleAddAsStop = () => {
+    if (!pendingPlace) return;
+    setStops((prev) => [...prev, pendingPlace]);
+    setPendingPlace(null);
+    setIsChangePromptOpen(false);
+  };
+
+  const handleConfirmChangeOrigin = () => {
+    if (!pendingPlace) return;
+    handleSelectOrigin(pendingPlace);
+    setPendingPlace(null);
+    setIsChangePromptOpen(false);
+  };
+
+  const handleCancelChangeLocation = () => {
+    setPendingPlace(null);
+    setIsChangePromptOpen(false);
+  };
+
+  const handleRemoveStop = (index: number) => {
+    setStops((prev) => prev.filter((_, i) => i !== index));
   };
 
   const originLat = origin ? origin.lat : null;
@@ -205,11 +253,15 @@ export const App: React.FC = () => {
     }
     let cancelled = false;
     setIsLoadingRoute(true);
+
+    const waypoints = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
+
     getDirections(
       { lat: originLat, lng: originLng },
       { lat: destLat, lng: destLng },
       travelMode,
-      preferences.geoapifyApiKey
+      preferences.geoapifyApiKey,
+      waypoints
     )
       .then((res) => {
         if (cancelled) return;
@@ -221,10 +273,16 @@ export const App: React.FC = () => {
       })
       .catch(() => {
         if (cancelled) return;
-        const d = Math.round(calculateHaversineDistance(
+        const allPoints = [
           { lat: originLat, lng: originLng },
-          { lat: destLat, lng: destLng }
-        ));
+          ...waypoints,
+          { lat: destLat, lng: destLng },
+        ];
+        let totalD = 0;
+        for (let i = 0; i < allPoints.length - 1; i++) {
+          totalD += calculateHaversineDistance(allPoints[i], allPoints[i + 1]);
+        }
+        const d = Math.round(totalD);
         const secs = Math.round(d / (travelMode === "walking" ? 1.4 : travelMode === "bike" ? 4.5 : 11.1));
         setRouteInfo({
           distanceMeters: d,
@@ -233,7 +291,7 @@ export const App: React.FC = () => {
           formattedDuration: secs > 3600
             ? Math.floor(secs / 3600) + " hr " + Math.round((secs % 3600) / 60) + " min"
             : Math.round(secs / 60) + " min",
-          coordinates: [[originLat, originLng], [destLat, destLng]],
+          coordinates: allPoints.map((p) => [p.lat, p.lng] as [number, number]),
           mode: travelMode,
           steps: generateFallbackSteps(d),
         });
@@ -246,7 +304,7 @@ export const App: React.FC = () => {
         if (!cancelled) setIsLoadingRoute(false);
       });
     return () => { cancelled = true; };
-  }, [originLat, originLng, destLat, destLng, travelMode, preferences.geoapifyApiKey, journeyStatus]);
+  }, [originLat, originLng, destLat, destLng, stops, travelMode, preferences.geoapifyApiKey, journeyStatus]);
 
   const handleUnlockAudio = async () => {
     const ok = await audioAlarm.unlockAudio();
@@ -402,6 +460,7 @@ export const App: React.FC = () => {
             currentPosition={currentPosition}
             origin={origin}
             destination={destination}
+            stops={stops}
             routeCoordinates={routeInfo?.coordinates}
             routeInfo={routeInfo}
             radiusMeters={selectedRadius}
@@ -429,6 +488,8 @@ export const App: React.FC = () => {
                   origin={origin}
                   onSelectOrigin={handleSelectOrigin}
                   destination={destination}
+                  stops={stops}
+                  onRemoveStop={handleRemoveStop}
                   onSelectDestination={handleSelectDestination}
                   onClearDestination={handleClearDestination}
                   currentPosition={currentPosition}
@@ -523,6 +584,18 @@ export const App: React.FC = () => {
       <SavedPlacesModal isOpen={isSavedPlacesOpen} onClose={() => { setIsSavedPlacesOpen(false); setActiveTab("map"); }} onSelectDestination={handleSelectDestination} />
       <HistoryModal isOpen={isHistoryOpen} onClose={() => { setIsHistoryOpen(false); setActiveTab("map"); }} onSelectDestination={handleSelectDestination} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => { setIsSettingsOpen(false); setActiveTab("map"); }} preferences={preferences} onSavePreferences={handleSavePreferences} />
+      
+      {/* Accidental click protection confirmation modal */}
+      <ChangeLocationPrompt
+        isOpen={isChangePromptOpen}
+        pendingPlace={pendingPlace}
+        currentDestination={destination}
+        currentOrigin={origin}
+        onSetAsDestination={handleConfirmChangeDestination}
+        onAddAsStop={handleAddAsStop}
+        onSetAsOrigin={handleConfirmChangeOrigin}
+        onCancel={handleCancelChangeLocation}
+      />
     </div>
   );
 };
