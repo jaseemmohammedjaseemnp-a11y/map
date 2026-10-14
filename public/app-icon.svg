@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1d16" />
+      <stop offset="50%" stop-color="#122b20" />
+      <stop offset="100%" stop-color="#07150e" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbf7ee" />
+      <stop offset="100%" stop-color="#decbb4" />
+    </linearGradient>
+    <linearGradient id="radarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#059669" stop-opacity="0.1" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  
+  <!-- App Background with smooth squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#224b38" stroke-width="4" opacity="0.6" />
+
+  <!-- Radar distance rings -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#1f4837" stroke-width="2" stroke-dasharray="8 8" opacity="0.5" />
+  <circle cx="256" cy="256" r="130" fill="url(#radarGrad)" stroke="#34d399" stroke-width="2.5" opacity="0.4" />
+  <circle cx="256" cy="256" r="75" fill="#173629" stroke="#539e7d" stroke-width="3" />
+
+  <!-- Alarm Bell with gold/cream luster -->
+  <g filter="url(#glow)">
+    <!-- Bell body -->
+    <path d="M256 140 C216 140 186 172 186 216 C186 264 168 288 152 304 C148 308 150 316 156 316 L356 316 C362 316 364 308 360 304 C344 288 326 264 326 216 C326 172 296 140 256 140 Z" fill="url(#accentGrad)" />
+    
+    <!-- Bell top handle -->
+    <path d="M242 126 C242 118 248 112 256 112 C264 112 270 118 270 126 L270 140 L242 140 Z" fill="#caa67b" />
+    
+    <!-- Clapper / ringer -->
+    <circle cx="256" cy="344" r="24" fill="#decbb4" />
+    
+    <!-- Sound Waves / alert pulses -->
+    <path d="M375 190 C395 210 405 235 405 260" fill="none" stroke="#34d399" stroke-width="8" stroke-linecap="round" />
+    <path d="M137 190 C117 210 107 235 107 260" fill="none" stroke="#34d399" stroke-width="8" stroke-linecap="round" />
+    <path d="M410 160 C440 190 450 230 450 270" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" opacity="0.8" />
+    <path d="M102 160 C72 190 62 230 62 270" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" opacity="0.8" />
+  </g>
+
+  <!-- GPS Target Location Pin at center bottom -->
+  <circle cx="256" cy="256" r="10" fill="#10b981" />
+</svg>

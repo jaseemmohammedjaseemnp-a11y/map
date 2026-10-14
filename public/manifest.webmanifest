@@ -1,0 +1,19 @@
+{
+  "name": "NearMe Alarm - Proximity Transit Alert",
+  "short_name": "NearMe Alarm",
+  "description": "Never miss your stop. Audible GPS proximity alarm for bus, train, and transit commuters.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1d16",
+  "theme_color": "#0b1d16",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["travel", "navigation", "utilities"]
+}
