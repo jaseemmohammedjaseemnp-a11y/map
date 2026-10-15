@@ -22,7 +22,7 @@ import { useGeolocation } from "./hooks/useGeolocation";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import { reverseGeocodeGeoapify } from "./services/geoapifyService";
 import { getDirections, generateFallbackSteps, type RouteResult } from "./services/routingService";
-import { buildRouteGeometry, getActiveStepIndex } from "./utils/travelEngine";
+import { buildRouteGeometry, getActiveStepIndex, projectPositionOntoRoute, getStepNavigationInfo } from "./utils/travelEngine";
 
 import { Header } from "./components/Header/Header";
 import { Sidebar } from "./components/Sidebar/Sidebar";
@@ -68,6 +68,9 @@ export const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [_isAudioUnlocked, setIsAudioUnlocked] = useState<boolean>(false);
 
+  const [distanceToNextManeuver, setDistanceToNextManeuver] = useState<number | undefined>(undefined);
+  const [snappedVehicleCoords, setSnappedVehicleCoords] = useState<Coordinates | null>(null);
+
   const routeGeomRef = useRef<ReturnType<typeof buildRouteGeometry> | null>(null);
   const arrivalFiredRef = useRef<boolean>(false);
 
@@ -81,9 +84,10 @@ export const App: React.FC = () => {
     requestCurrentLocation,
   } = useGeolocation({
     enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 0,
-    bufferSize: 15,
+    timeout: 27000,
+    maximumAge: 2000,
+    bufferSize: 20,
+    autoStart: true,
   });
 
   const { isVisible: _isVisible } = usePageVisibility();
@@ -122,8 +126,10 @@ export const App: React.FC = () => {
     if (currentPosition.heading !== null && currentPosition.heading !== undefined && !isNaN(currentPosition.heading)) {
       setGpsHeading(currentPosition.heading);
     }
-    if (currentPosition.speed !== null && currentPosition.speed !== undefined && currentPosition.speed > 0) {
+    if (currentPosition.speed !== null && currentPosition.speed !== undefined && currentPosition.speed >= 0) {
       setGpsSpeedKmh(Math.round(currentPosition.speed * 3.6 * 10) / 10);
+    } else {
+      setGpsSpeedKmh(0);
     }
   }, [currentPosition]);
 
@@ -368,30 +374,50 @@ export const App: React.FC = () => {
     setJourneyStatus("tracking");
   };
 
-  // CORE: Real-GPS navigation update — NO simulation, purely device GPS
+  // CORE: Real-GPS navigation update — accurate road-snapped tracking and step guidance
   useEffect(() => {
     if (journeyStatus !== "tracking" || !destination || !currentPosition) return;
     const pos = { lat: currentPosition.lat, lng: currentPosition.lng };
     const dest = { lat: destination.lat, lng: destination.lng };
-    const distToDest = Math.round(calculateHaversineDistance(pos, dest));
-    setDistanceToDestMeters(distToDest);
-    setRemainingDistance(distToDest);
+    const straightDistToDest = Math.round(calculateHaversineDistance(pos, dest));
+
     const speedMps = (currentPosition.speed && currentPosition.speed > 0.5)
       ? currentPosition.speed
       : (travelMode === "walking" ? 1.2 : travelMode === "bike" ? 4.0 : 10.0);
-    setRemainingDuration(Math.round(distToDest / speedMps));
-    if (routeGeomRef.current && routeInfo?.steps && routeInfo.steps.length > 0) {
-      const geom = routeGeomRef.current;
-      const totalDist = geom.totalDistanceMeters;
-      const distCovered = Math.max(0, totalDist - distToDest);
-      const progress = totalDist > 0 ? Math.min(1, distCovered / totalDist) : 0;
-      const stepIdx = getActiveStepIndex(routeInfo.steps, progress);
-      setCurrentStepIndex(stepIdx);
+
+    if (routeGeomRef.current && routeGeomRef.current.coordinates.length > 1) {
+      const match = projectPositionOntoRoute(pos, routeGeomRef.current);
+      setSnappedVehicleCoords(match.snappedPoint);
+      setDistanceToDestMeters(match.remainingDistanceMeters);
+      setRemainingDistance(match.remainingDistanceMeters);
+      setRemainingDuration(Math.round(match.remainingDistanceMeters / speedMps));
+
+      if (match.isOnRoute && (currentPosition.heading === null || isNaN(currentPosition.heading))) {
+        setGpsHeading(match.roadBearing);
+      }
+
+      if (routeInfo?.steps && routeInfo.steps.length > 0) {
+        const navInfo = getStepNavigationInfo(
+          routeInfo.steps,
+          match.distanceAlongRouteMeters,
+          routeGeomRef.current.totalDistanceMeters
+        );
+        setCurrentStepIndex(navInfo.stepIndex);
+        setDistanceToNextManeuver(navInfo.distanceToNextManeuverMeters);
+      }
+    } else {
+      setSnappedVehicleCoords(pos);
+      setDistanceToDestMeters(straightDistToDest);
+      setRemainingDistance(straightDistToDest);
+      setRemainingDuration(Math.round(straightDistToDest / speedMps));
+      setDistanceToNextManeuver(undefined);
     }
+
     if (!arrivalFiredRef.current) {
-      if (distToDest <= selectedRadius) {
-        if (distToDest <= selectedRadius * 0.7) {
-          triggerArrival(distToDest);
+      const effectiveDist = Math.min(straightDistToDest, distanceToDestMeters ?? straightDistToDest);
+      if (effectiveDist <= selectedRadius) {
+        if (effectiveDist <= selectedRadius * 0.7) {
+          triggerArrival(effectiveDist);
           return;
         }
         const condition = verifyArrivalCondition(readingsHistory, dest, selectedRadius, 2, 200);
@@ -403,6 +429,7 @@ export const App: React.FC = () => {
   }, [
     currentPosition, destination, journeyStatus, selectedRadius,
     travelMode, readingsHistory, routeInfo?.steps, triggerArrival,
+    distanceToDestMeters,
   ]);
 
   const activeSteps = routeInfo?.steps?.length
@@ -419,7 +446,7 @@ export const App: React.FC = () => {
   const currentMapStyle: MapTileStyle = mapType === "satellite" ? "satellite" : "osm-carto";
   const isTracking = journeyStatus === "tracking";
   const vehicleCoords: Coordinates | null = isTracking && currentPosition
-    ? { lat: currentPosition.lat, lng: currentPosition.lng }
+    ? (snappedVehicleCoords || { lat: currentPosition.lat, lng: currentPosition.lng })
     : null;
 
   return (
@@ -517,6 +544,8 @@ export const App: React.FC = () => {
                   steps={activeSteps}
                   currentStepIndex={currentStepIndex}
                   currentSpeedKmh={gpsSpeedKmh}
+                  travelingHeading={gpsHeading}
+                  distanceToNextManeuverMeters={distanceToNextManeuver}
                   onInstantArrival={() => triggerArrival(selectedRadius)}
                   isPaused={isPaused}
                   onTogglePause={() => setIsPaused((prev) => !prev)}

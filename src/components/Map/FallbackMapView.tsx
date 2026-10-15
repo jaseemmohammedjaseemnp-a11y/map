@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
+import { Navigation } from 'lucide-react';
 import type { Coordinates, Destination, GPSReading, MapTileStyle, TravelMode } from '../../types';
 import type { RouteResult } from '../../services/routingService';
 import { getGeoapifyApiKey } from '../../services/geoapifyService';
@@ -63,9 +64,20 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
   const [followVehicle, setFollowVehicle] = useState<boolean>(true);
   const lastFittedRouteKeyRef = useRef<string>('');
   const lastPanTimeRef = useRef<number>(0);
+  const initialCenteredRef = useRef<boolean>(false);
 
   const resolvedGeoapifyKey = getGeoapifyApiKey(geoapifyApiKey);
   const isUsingGeoapify = Boolean(resolvedGeoapifyKey && resolvedGeoapifyKey.trim().length > 0);
+
+  const onSelectCoordinatesRef = useRef(onSelectCoordinates);
+  useEffect(() => {
+    onSelectCoordinatesRef.current = onSelectCoordinates;
+  }, [onSelectCoordinates]);
+
+  const isTravelingRef = useRef(isTraveling);
+  useEffect(() => {
+    isTravelingRef.current = isTraveling;
+  }, [isTraveling]);
 
   // Initialize Map
   useEffect(() => {
@@ -88,13 +100,13 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       const lat = Number(e.latlng.lat.toFixed(6));
       const lng = Number(e.latlng.lng.toFixed(6));
       if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 85) {
-        onSelectCoordinates({ lat, lng });
+        onSelectCoordinatesRef.current({ lat, lng });
       }
     });
 
     // Detect user manual dragging to pause automatic camera snapping
     map.on('dragstart', () => {
-      if (isTraveling) {
+      if (isTravelingRef.current) {
         setFollowVehicle(false);
       }
     });
@@ -114,6 +126,7 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       mapRef.current = null;
     };
   }, []);
+
 
   // Update Tile Layer
   useEffect(() => {
@@ -218,17 +231,30 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
 
     const userLatLng: L.LatLngTuple = [currentPosition.lat, currentPosition.lng];
 
-    // High accuracy centered user icon with explicit Leaflet anchor
+    // Auto-center map on user's first valid GPS fix if no route is loaded yet
+    if (!initialCenteredRef.current && !routeCoordinates && !destination) {
+      initialCenteredRef.current = true;
+      map.setView(userLatLng, 15);
+    }
+
+    // High accuracy centered user icon with directional cone if heading is known
+    const headingCone = currentPosition.heading !== null && currentPosition.heading !== undefined ? `
+      <div style="position: absolute; width: 36px; height: 36px; border-radius: 9999px; transform: rotate(${currentPosition.heading}deg); display: flex; justify-content: center; pointer-events: none;">
+        <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid #2563eb; margin-top: -8px;"></div>
+      </div>
+    ` : '';
+
     const userIcon = L.divIcon({
       className: 'bg-transparent border-none',
       html: `
-        <div style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; pointer-events: none;">
-          <span style="position: absolute; width: 34px; height: 34px; border-radius: 9999px; background: rgba(37, 99, 235, 0.28); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
-          <div style="width: 16px; height: 16px; border-radius: 9999px; background: #2563eb; border: 3px solid #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.4);"></div>
+        <div style="position: relative; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+          <span style="position: absolute; width: 40px; height: 40px; border-radius: 9999px; background: rgba(37, 99, 235, 0.22); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
+          ${headingCone}
+          <div style="width: 16px; height: 16px; border-radius: 9999px; background: #2563eb; border: 3px solid #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.4); z-index: 2;"></div>
         </div>
       `,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
     });
 
     if (!userMarkerRef.current) {
@@ -251,7 +277,7 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       userAccuracyCircleRef.current.setLatLng(userLatLng);
       userAccuracyCircleRef.current.setRadius(accuracyM);
     }
-  }, [currentPosition]);
+  }, [currentPosition, routeCoordinates, destination]);
 
   // Update Origin Marker with needle tip anchor
   useEffect(() => {
@@ -508,7 +534,7 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       }
       lastFittedRouteKeyRef.current = '';
     }
-  }, [routeCoordinates, origin, destination, routeInfo, isTraveling, travelMode]);
+  }, [routeCoordinates, origin, destination, routeInfo, isTraveling, travelMode, currentPosition]);
 
   // Update Traveling Vehicle Marker along the road with smooth camera tracking
   useEffect(() => {
@@ -564,12 +590,17 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
       vehicleMarkerRef.current.setIcon(vehicleIcon);
     }
 
-    // Smooth camera follow during travel (throttled to avoid fighting user experience)
+    // Smooth camera follow during travel
     if (followVehicle) {
       const now = Date.now();
-      if (now - lastPanTimeRef.current > 400) {
+      if (now - lastPanTimeRef.current > 350) {
         lastPanTimeRef.current = now;
-        map.panTo(vehicleLatLng, { animate: true, duration: 0.35 });
+        const currentZoom = map.getZoom();
+        if (currentZoom < 15) {
+          map.setView(vehicleLatLng, 16, { animate: true });
+        } else {
+          map.panTo(vehicleLatLng, { animate: true, duration: 0.3 });
+        }
       }
     }
   }, [isTraveling, travelingCoords, travelingHeading, travelMode, followVehicle]);
@@ -582,35 +613,13 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
     mapRef.current?.zoomOut();
   };
 
-  const handleCenterUser = useCallback(() => {
-    if (
-      currentPosition &&
-      mapRef.current &&
-      !isNaN(currentPosition.lat) &&
-      Math.abs(currentPosition.lat) <= 85
-    ) {
-      mapRef.current.flyTo([currentPosition.lat, currentPosition.lng], 15, { duration: 0.8 });
-    }
-  }, [currentPosition]);
-
-  const handleFitRoute = useCallback(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const pts = routeCoordinates || (origin && destination ? [[origin.lat, origin.lng], [destination.lat, destination.lng]] : null);
-    if (pts && pts.length >= 2) {
-      const bounds = L.latLngBounds(pts as [number, number][]);
-      if (bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 14 });
-      }
-    }
-  }, [routeCoordinates, origin, destination]);
 
   return (
     <div className={`relative w-full h-full overflow-hidden select-none bg-[#f2ede4] ${className}`}>
       <div ref={containerRef} className="w-full h-full z-0 cursor-crosshair" />
 
-      {/* Map Controls on Right: Keep ONLY Zoom In & Zoom Out */}
-      <div className="absolute right-4 top-24 z-20 flex flex-col">
+      {/* Map Controls on Right: Zoom In, Zoom Out, and Re-center / Follow GPS */}
+      <div className="absolute right-4 top-24 z-20 flex flex-col gap-2">
         <div className="flex flex-col rounded-xl bg-[#FFF8ED] border border-[#ded5c5] shadow-sm overflow-hidden">
           <button
             onClick={handleZoomIn}
@@ -627,6 +636,23 @@ export const FallbackMapView: React.FC<FallbackMapViewProps> = ({
             aria-label="Zoom Out"
           >
             −
+          </button>
+          <button
+            onClick={() => {
+              setFollowVehicle(true);
+              if (isTraveling && travelingCoords) {
+                mapRef.current?.flyTo([travelingCoords.lat, travelingCoords.lng], 17, { duration: 0.5 });
+              } else if (currentPosition) {
+                mapRef.current?.flyTo([currentPosition.lat, currentPosition.lng], 16, { duration: 0.5 });
+              }
+            }}
+            className={`w-9 h-9 flex items-center justify-center transition-all cursor-pointer border-t border-[#ded5c5] active:bg-[#ebdcc7] ${
+              followVehicle ? 'text-emerald-700 bg-emerald-50' : 'text-[#14221d] hover:bg-[#f5ecdc]'
+            }`}
+            title={followVehicle ? "Following Live GPS" : "Re-center on My Location"}
+            aria-label="Re-center on My Location"
+          >
+            <Navigation className={`w-4 h-4 ${followVehicle ? 'fill-emerald-600 text-emerald-600' : ''}`} />
           </button>
         </div>
       </div>

@@ -132,3 +132,161 @@ export function getActiveStepIndex(steps: RouteStep[], progress: number): number
 
   return stepIndex;
 }
+
+/**
+ * Projects a point onto a line segment [p1, p2].
+ * Returns the nearest point on the segment, distance to the segment in meters, and segment fraction [0, 1].
+ */
+export function projectPointOntoSegment(
+  point: Coordinates,
+  p1: Coordinates,
+  p2: Coordinates
+): { projected: Coordinates; distanceMeters: number; fraction: number } {
+  const dx = p2.lng - p1.lng;
+  const dy = p2.lat - p1.lat;
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq === 0) {
+    return {
+      projected: p1,
+      distanceMeters: calculateHaversineDistance(point, p1),
+      fraction: 0,
+    };
+  }
+
+  // Projection scalar t in range [0, 1]
+  let t = ((point.lng - p1.lng) * dx + (point.lat - p1.lat) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+
+  const projected: Coordinates = {
+    lat: p1.lat + t * dy,
+    lng: p1.lng + t * dx,
+  };
+
+  const distanceMeters = calculateHaversineDistance(point, projected);
+  return { projected, distanceMeters, fraction: t };
+}
+
+export interface RouteMatchResult {
+  snappedPoint: Coordinates;
+  distanceToRouteMeters: number;
+  distanceAlongRouteMeters: number;
+  remainingDistanceMeters: number;
+  routeProgress: number; // 0.0 to 1.0
+  roadBearing: number;
+  isOnRoute: boolean;
+}
+
+/**
+ * Projects a user's GPS coordinate onto the polyline route geometry.
+ * Finds the closest road segment, computes accurate distance traveled along the route,
+ * remaining road distance, road bearing, and snapped coordinate for smooth car navigation.
+ */
+export function projectPositionOntoRoute(
+  pos: Coordinates,
+  geom: RouteGeometryData,
+  snapThresholdMeters = 80
+): RouteMatchResult {
+  const { coordinates, cumulativeDistances, totalDistanceMeters } = geom;
+  if (!coordinates || coordinates.length < 2) {
+    return {
+      snappedPoint: pos,
+      distanceToRouteMeters: 0,
+      distanceAlongRouteMeters: 0,
+      remainingDistanceMeters: totalDistanceMeters,
+      routeProgress: 0,
+      roadBearing: 0,
+      isOnRoute: true,
+    };
+  }
+
+  let minDistance = Infinity;
+  let bestProjected: Coordinates = pos;
+  let bestDistanceAlong = 0;
+  let bestBearing = 0;
+
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const p1: Coordinates = { lat: coordinates[i][0], lng: coordinates[i][1] };
+    const p2: Coordinates = { lat: coordinates[i + 1][0], lng: coordinates[i + 1][1] };
+
+    const proj = projectPointOntoSegment(pos, p1, p2);
+    if (proj.distanceMeters < minDistance) {
+      minDistance = proj.distanceMeters;
+      bestProjected = proj.projected;
+      const segStartDist = cumulativeDistances[i] || 0;
+      const segEndDist = cumulativeDistances[i + 1] || segStartDist;
+      bestDistanceAlong = segStartDist + proj.fraction * (segEndDist - segStartDist);
+      bestBearing = calculateBearing(p1, p2);
+    }
+  }
+
+  const remainingDistanceMeters = Math.max(0, totalDistanceMeters - bestDistanceAlong);
+  const routeProgress = totalDistanceMeters > 0 ? Math.min(1, Math.max(0, bestDistanceAlong / totalDistanceMeters)) : 0;
+  const isOnRoute = minDistance <= snapThresholdMeters;
+
+  return {
+    snappedPoint: isOnRoute ? bestProjected : pos,
+    distanceToRouteMeters: Math.round(minDistance),
+    distanceAlongRouteMeters: Math.round(bestDistanceAlong),
+    remainingDistanceMeters: Math.round(remainingDistanceMeters),
+    routeProgress,
+    roadBearing: bestBearing,
+    isOnRoute,
+  };
+}
+
+export interface StepNavigationInfo {
+  stepIndex: number;
+  distanceToNextManeuverMeters: number;
+  currentStep: RouteStep;
+  nextStep?: RouteStep;
+}
+
+/**
+ * Calculates accurate step progress and countdown distance to the next maneuver
+ */
+export function getStepNavigationInfo(
+  steps: RouteStep[],
+  distanceAlongRouteMeters: number,
+  totalDistanceMeters: number
+): StepNavigationInfo {
+  if (!steps || steps.length === 0) {
+    const dummy: RouteStep = {
+      instruction: 'Head toward destination',
+      distanceMeters: Math.max(0, totalDistanceMeters - distanceAlongRouteMeters),
+      durationSeconds: 0,
+      icon: '⬆️',
+    };
+    return {
+      stepIndex: 0,
+      distanceToNextManeuverMeters: dummy.distanceMeters,
+      currentStep: dummy,
+    };
+  }
+
+  let runningStepDist = 0;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const stepLength = step.distanceMeters || 0;
+    const stepEndDist = runningStepDist + stepLength;
+
+    if (distanceAlongRouteMeters < stepEndDist || i === steps.length - 1) {
+      const remainingInStep = Math.max(0, stepEndDist - distanceAlongRouteMeters);
+      return {
+        stepIndex: i,
+        distanceToNextManeuverMeters: Math.round(remainingInStep),
+        currentStep: step,
+        nextStep: steps[i + 1],
+      };
+    }
+    runningStepDist = stepEndDist;
+  }
+
+  const last = steps[steps.length - 1];
+  return {
+    stepIndex: steps.length - 1,
+    distanceToNextManeuverMeters: 0,
+    currentStep: last,
+  };
+}
+
