@@ -22,7 +22,7 @@ import { useGeolocation } from "./hooks/useGeolocation";
 import { usePageVisibility } from "./hooks/usePageVisibility";
 import { reverseGeocodeGeoapify } from "./services/geoapifyService";
 import { getDirections, generateFallbackSteps, type RouteResult } from "./services/routingService";
-import { buildRouteGeometry, getActiveStepIndex, projectPositionOntoRoute, getStepNavigationInfo } from "./utils/travelEngine";
+import { buildRouteGeometry, projectPositionOntoRoute, getStepNavigationInfo } from "./utils/travelEngine";
 
 import { Header } from "./components/Header/Header";
 import { Sidebar } from "./components/Sidebar/Sidebar";
@@ -36,6 +36,10 @@ import { SettingsModal } from "./components/Settings/SettingsModal";
 import { SavedPlacesModal } from "./components/Saved/SavedPlacesModal";
 import { HistoryModal } from "./components/History/HistoryModal";
 import { ChangeLocationPrompt } from "./components/Map/ChangeLocationPrompt";
+import { MobileBottomNav } from "./components/Navigation/MobileBottomNav";
+import { MobileRouteSelectedSheet } from "./components/Navigation/MobileRouteSelectedSheet";
+import { MobileDuringJourneySheet } from "./components/Navigation/MobileDuringJourneySheet";
+import { SimulationControls } from "./components/Simulation/SimulationControls";
 
 export const App: React.FC = () => {
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
@@ -68,6 +72,7 @@ export const App: React.FC = () => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [_isAudioUnlocked, setIsAudioUnlocked] = useState<boolean>(false);
 
+  const [isSimulationOpen, setIsSimulationOpen] = useState<boolean>(false);
   const [distanceToNextManeuver, setDistanceToNextManeuver] = useState<number | undefined>(undefined);
   const [snappedVehicleCoords, setSnappedVehicleCoords] = useState<Coordinates | null>(null);
 
@@ -458,26 +463,28 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Clean Google Maps inspired Header */}
-      <Header
-        journeyStatus={journeyStatus}
-        mapType={mapType}
-        onChangeMapType={(type) => {
-          setMapType(type);
-          const updated = {
-            ...preferences,
-            mapStyle: type === "satellite" ? ("satellite" as MapTileStyle) : ("osm-carto" as MapTileStyle),
-          };
-          setPreferences(updated);
-          saveUserPreferences(updated);
-        }}
-        onOpenMenu={() => setIsMenuOpen(true)}
-        onSelectDestination={handleSelectDestination}
-        geoapifyApiKey={preferences.geoapifyApiKey}
-        currentPosition={currentPosition}
-        gpsAccuracy={currentPosition?.accuracy}
-        isWatchingGps={isWatching}
-      />
+      {/* Clean Google Maps inspired Header (Screen 1 & Desktop) */}
+      <div className={destination && !isTracking ? "hidden sm:block" : isTracking ? "hidden sm:block" : "block"}>
+        <Header
+          journeyStatus={journeyStatus}
+          mapType={mapType}
+          onChangeMapType={(type) => {
+            setMapType(type);
+            const updated = {
+              ...preferences,
+              mapStyle: type === "satellite" ? ("satellite" as MapTileStyle) : ("osm-carto" as MapTileStyle),
+            };
+            setPreferences(updated);
+            saveUserPreferences(updated);
+          }}
+          onOpenMenu={() => setIsMenuOpen(true)}
+          onSelectDestination={handleSelectDestination}
+          geoapifyApiKey={preferences.geoapifyApiKey}
+          currentPosition={currentPosition}
+          gpsAccuracy={currentPosition?.accuracy}
+          isWatchingGps={isWatching}
+        />
+      </div>
 
       {/* Main Map & Navigation Layer */}
       <div className="flex-1 w-full h-full relative overflow-hidden flex">
@@ -508,9 +515,13 @@ export const App: React.FC = () => {
         <div className="relative z-10 w-full h-full pointer-events-none flex flex-col justify-between p-3 sm:p-5 max-w-[1920px] mx-auto">
           {/* Top Section */}
           <div className="flex items-start justify-between w-full">
-            {/* Left: Destination Search Card (when not tracking) */}
+            {/* Left: Destination Search Card (Screen 1 & Desktop) */}
             {!isTracking && (
-              <div className="pointer-events-auto shrink-0 z-20 w-full sm:w-[380px] max-w-full overflow-y-auto max-h-[calc(100vh-6.5rem)] pb-4">
+              <div
+                className={`pointer-events-auto shrink-0 z-20 w-full sm:w-[380px] max-w-full overflow-y-auto max-h-[calc(100vh-6.5rem)] pb-24 sm:pb-4 ${
+                  destination ? "hidden sm:block" : "block"
+                }`}
+              >
                 <DestinationSearch
                   origin={origin}
                   onSelectOrigin={handleSelectOrigin}
@@ -531,15 +542,15 @@ export const App: React.FC = () => {
                   onLocateUser={() => requestCurrentLocation()}
                   onStartJourney={handleStartJourney}
                   onTestAlarm={handleTestAlarmSound}
-                  onSimulate={undefined}
+                  onSimulate={() => setIsSimulationOpen(true)}
                   isTracking={isTracking}
                 />
               </div>
             )}
 
-            {/* Top Center: Minimal Clean Navigation Card (when tracking) */}
+            {/* Top Center: Minimal Clean Navigation Card (when tracking on desktop) */}
             {isTracking && (
-              <div className="pointer-events-auto w-full max-w-xl mx-auto z-20 transition-all duration-200">
+              <div className="hidden sm:block pointer-events-auto w-full max-w-xl mx-auto z-20 transition-all duration-200">
                 <TravelingDirectionsHUD
                   steps={activeSteps}
                   currentStepIndex={currentStepIndex}
@@ -557,11 +568,11 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          {/* Bottom Section: Journey Summary Card in Bottom-Left */}
+          {/* Bottom Section: Journey Summary Card in Bottom-Left (Desktop) */}
           <div className="pointer-events-auto w-full flex flex-col lg:flex-row items-end justify-between gap-4 pb-2 z-20">
             {/* Compact Bottom-Left Journey Summary Card */}
             {destination && routeInfo && (
-              <div className="w-full max-w-xl mx-auto lg:mx-0 animate-in fade-in slide-in-from-bottom-2 duration-250">
+              <div className="hidden sm:block w-full max-w-xl mx-auto lg:mx-0 animate-in fade-in slide-in-from-bottom-2 duration-250">
                 <JourneyProgressBar
                   routeInfo={routeInfo}
                   distanceMeters={remainingDistance}
@@ -595,6 +606,61 @@ export const App: React.FC = () => {
         </div>
       </div>
 
+      {/* MOBILE SCREEN 1: Bottom Navigation Bar */}
+      {!isTracking && !destination && (
+        <MobileBottomNav
+          activeTab={activeTab}
+          onSelectTab={handleSelectNavTab}
+        />
+      )}
+
+      {/* MOBILE SCREEN 2: Route Selected Floating Sheet & Top Bar */}
+      {!isTracking && destination && (
+        <MobileRouteSelectedSheet
+          routeInfo={routeInfo}
+          gpsSpeedKmh={gpsSpeedKmh}
+          travelMode={travelMode}
+          mapType={mapType}
+          onChangeMapType={(type) => {
+            setMapType(type);
+            const updated = {
+              ...preferences,
+              mapStyle: type === "satellite" ? ("satellite" as MapTileStyle) : ("osm-carto" as MapTileStyle),
+            };
+            setPreferences(updated);
+            saveUserPreferences(updated);
+          }}
+          onBack={handleClearDestination}
+          onStartJourney={handleStartJourney}
+        />
+      )}
+
+      {/* MOBILE SCREEN 3: During Journey Floating Maneuver HUD & Bottom Sheet */}
+      {isTracking && (
+        <MobileDuringJourneySheet
+          steps={activeSteps}
+          currentStepIndex={currentStepIndex}
+          routeInfo={routeInfo}
+          remainingDistanceMeters={remainingDistance}
+          remainingDurationSeconds={remainingDuration}
+          distanceToNextManeuverMeters={distanceToNextManeuver}
+          gpsSpeedKmh={gpsSpeedKmh}
+          travelingHeading={gpsHeading}
+          onStopJourney={handleStopJourney}
+          onTestAlarm={handleTestAlarmSound}
+          onToggleMapLayers={() => {
+            const next = mapType === "satellite" ? "map" : "satellite";
+            setMapType(next);
+            const updated = {
+              ...preferences,
+              mapStyle: next === "satellite" ? ("satellite" as MapTileStyle) : ("osm-carto" as MapTileStyle),
+            };
+            setPreferences(updated);
+            saveUserPreferences(updated);
+          }}
+        />
+      )}
+
       {/* Slide-over Navigation Drawer */}
       <Sidebar
         isOpen={isMenuOpen}
@@ -614,6 +680,36 @@ export const App: React.FC = () => {
       <HistoryModal isOpen={isHistoryOpen} onClose={() => { setIsHistoryOpen(false); setActiveTab("map"); }} onSelectDestination={handleSelectDestination} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => { setIsSettingsOpen(false); setActiveTab("map"); }} preferences={preferences} onSavePreferences={handleSavePreferences} />
       
+      {/* Simulation Controls Modal */}
+      <SimulationControls
+        isOpen={isSimulationOpen}
+        onClose={() => setIsSimulationOpen(false)}
+        destination={destination}
+        currentPosition={currentPosition}
+        isSimulating={journeyStatus === "tracking"}
+        simulationProgress={
+          routeInfo?.distanceMeters && routeInfo.distanceMeters > 0
+            ? Math.max(0, Math.min(1, 1 - (remainingDistance / routeInfo.distanceMeters)))
+            : 0.27
+        }
+        onToggleSimulation={(active) => {
+          if (active) {
+            handleStartJourney();
+          } else {
+            handleStopJourney();
+          }
+        }}
+        onProgressChange={(prog) => {
+          if (routeInfo?.distanceMeters) {
+            setRemainingDistance(Math.round(routeInfo.distanceMeters * (1 - prog)));
+          }
+        }}
+        onInstantArrival={() => triggerArrival(selectedRadius)}
+        speedKmh={gpsSpeedKmh || 40}
+        onSpeedChange={(spd) => setGpsSpeedKmh(spd)}
+        selectedRadius={selectedRadius}
+      />
+
       {/* Accidental click protection confirmation modal */}
       <ChangeLocationPrompt
         isOpen={isChangePromptOpen}
@@ -628,5 +724,6 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
 
 export default App;

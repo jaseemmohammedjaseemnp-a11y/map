@@ -491,16 +491,43 @@ export const DestinationSearch: React.FC<DestinationSearchProps> = ({
         </div>
       </div>
 
-      {/* Action Button: Test Alarm */}
-      <div className="pt-1">
+      {/* Primary Action Button: Start Journey Alarm */}
+      <div className="pt-2 flex flex-col gap-2">
         <button
-          onClick={onTestAlarm}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl bg-[#f5ecdc] hover:bg-[#ebdcc7] border border-[#ded5c5] text-[#14221d] text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
+          onClick={() => {
+            if (destination && onStartJourney) {
+              onStartJourney();
+            } else {
+              setActiveDropdown('dest');
+              const input = document.querySelector<HTMLInputElement>('input[placeholder="Enter destination..."]');
+              input?.focus();
+            }
+          }}
+          className="w-full py-3.5 px-4 rounded-full bg-[#174C3C] hover:bg-[#123e31] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.98] cursor-pointer"
         >
-          <Volume2 className="w-4 h-4 text-[#174C3C]" />
-          <span>Test Alarm Sound</span>
+          <Bell className="w-4 h-4 fill-current text-white" />
+          <span>Start Journey Alarm</span>
         </button>
+
+        {/* Secondary Action Row: Test Sound & Simulate */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={onTestAlarm}
+            className="py-2.5 px-3 rounded-2xl bg-[#f5ecdc] hover:bg-[#ebdcc7] border border-[#ded5c5] text-[#14221d] text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95"
+          >
+            <Volume2 className="w-4 h-4 text-[#174C3C]" />
+            <span>Test Sound</span>
+          </button>
+          <button
+            onClick={_onSimulate}
+            className="py-2.5 px-3 rounded-2xl bg-[#f5ecdc] hover:bg-[#ebdcc7] border border-[#ded5c5] text-[#14221d] text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-95"
+          >
+            <Navigation className="w-4 h-4 text-[#174C3C] rotate-45" />
+            <span>Simulate</span>
+          </button>
+        </div>
       </div>
     </div>
   );
+
 };

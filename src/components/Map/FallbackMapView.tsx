@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { Navigation } from 'lucide-react';
 import type { Coordinates, Destination, GPSReading, MapTileStyle, TravelMode } from '../../types';

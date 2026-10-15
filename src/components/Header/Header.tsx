@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Coordinates, Destination, JourneyStatus } from '../../types';
 import { searchGeoapifyPlaces } from '../../services/geoapifyService';
-import { Search, X, MapPin } from 'lucide-react';
+import { Search, X, MapPin, Mic } from 'lucide-react';
 
 interface HeaderProps {
   journeyStatus: JourneyStatus;
@@ -134,46 +134,94 @@ export const Header: React.FC<HeaderProps> = ({
     setIsOpen(false);
   };
 
+  const handleVoiceSearch = () => {
+    const windowWithSpeech = window as unknown as {
+      webkitSpeechRecognition?: new () => {
+        start: () => void;
+        onresult: (e: { results: { [key: number]: { [key: number]: { transcript: string } } } }) => void;
+        onerror: () => void;
+      };
+      SpeechRecognition?: new () => {
+        start: () => void;
+        onresult: (e: { results: { [key: number]: { [key: number]: { transcript: string } } } }) => void;
+        onerror: () => void;
+      };
+    };
+
+    const SpeechRec = windowWithSpeech.SpeechRecognition || windowWithSpeech.webkitSpeechRecognition;
+    if (SpeechRec) {
+      try {
+        const recognition = new SpeechRec();
+        recognition.start();
+        recognition.onresult = (e) => {
+          const transcript = e.results[0][0].transcript;
+          if (transcript) {
+            setLocalQuery(transcript);
+            if (onSearchQuery) onSearchQuery(transcript);
+          }
+        };
+      } catch {
+        // Voice recognition fallback
+      }
+    } else {
+      inputRef.current?.focus();
+    }
+  };
+
   const gpsLabel = isWatchingGps
     ? `GPS Active${gpsAccuracy ? ` · ±${Math.round(gpsAccuracy)}m` : ' · ±35m'}`
     : 'Acquiring GPS...';
 
   return (
     <header className="relative w-full z-40 safe-top px-3 sm:px-6 pt-3 pb-2 select-none pointer-events-none">
-      <div className="flex items-center justify-between gap-3 max-w-[1920px] mx-auto">
-        {/* Left: Hamburger & Brand Logo */}
-        <div className="flex items-center gap-3 pointer-events-auto">
-          {/* Hamburger Menu Button */}
-          <button
-            onClick={onOpenMenu}
-            className="w-10 h-10 rounded-2xl bg-[#FFF8ED] border border-[#ded5c5] flex items-center justify-center text-[#14221d] shadow-sm hover:bg-[#f5ecdc] transition-all cursor-pointer active:scale-95"
-            title="Navigation Menu"
-            aria-label="Navigation Menu"
-          >
-            <span className="text-lg leading-none font-medium">☰</span>
-          </button>
-
-          {/* Brand Logo */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 max-w-[1920px] mx-auto">
+        {/* Top Bar on Mobile / Left Group on Desktop */}
+        <div className="flex items-center justify-between gap-3 pointer-events-auto">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-[#174C3C] flex items-center justify-center text-white shadow-sm">
-              <MapPin className="w-5 h-5 text-cream-100" />
-            </div>
-            <div className="hidden xs:block sm:block">
-              <div className="flex items-center gap-1.5 text-base sm:text-lg font-black tracking-tight text-[#14221d] leading-none">
-                <span>NearMe</span>
-                <span className="text-[#c28b38] font-bold">Alarm</span>
+            {/* Hamburger Menu Button */}
+            <button
+              onClick={onOpenMenu}
+              className="w-10 h-10 rounded-2xl bg-[#FFF8ED] border border-[#ded5c5] flex items-center justify-center text-[#14221d] shadow-sm hover:bg-[#f5ecdc] transition-all cursor-pointer active:scale-95"
+              title="Navigation Menu"
+              aria-label="Navigation Menu"
+            >
+              <span className="text-lg leading-none font-medium">☰</span>
+            </button>
+
+            {/* Brand Logo & Name */}
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-[#174C3C] flex items-center justify-center text-white shadow-sm shrink-0">
+                <MapPin className="w-5 h-5 text-cream-100" />
               </div>
-              <div className="text-[11px] text-[#687a71] font-medium tracking-wide mt-0.5">
-                Transit Proximity Alert
+              <div className="block">
+                <div className="flex items-center gap-1 text-base sm:text-lg font-black tracking-tight text-[#14221d] leading-none">
+                  <span>NearMe</span>
+                  <span className="text-[#c28b38] font-bold">Alarm</span>
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-[#687a71] font-medium tracking-wide mt-0.5">
+                  Transit Proximity Alert
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Mobile Right: User Avatar Circle (Shown on Mobile) */}
+          <div className="flex sm:hidden items-center gap-2">
+            <button
+              onClick={onOpenMenu}
+              className="w-9 h-9 rounded-full bg-[#174C3C] text-white font-bold text-sm flex items-center justify-center shadow-xs cursor-pointer active:scale-95"
+              title="User Profile"
+              aria-label="User Profile"
+            >
+              J
+            </button>
           </div>
         </div>
 
         {/* Center: Destination Search Bar with Live Autocomplete */}
         <div
           ref={searchContainerRef}
-          className="relative flex-1 max-w-xl mx-2 sm:mx-4 pointer-events-auto"
+          className="relative flex-1 max-w-xl sm:mx-4 pointer-events-auto"
         >
           <div className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#FFF8ED] border border-[#ded5c5] shadow-sm text-sm transition-all focus-within:ring-2 focus-within:ring-[#174C3C]/20 focus-within:border-[#174C3C]">
             <Search className="w-4 h-4 text-[#687a71] shrink-0" />
@@ -189,13 +237,21 @@ export const Header: React.FC<HeaderProps> = ({
               placeholder="Search destination, city, station, or landmark..."
               className="flex-1 bg-transparent text-[#14221d] placeholder-[#8a9990] text-xs sm:text-sm font-medium outline-none truncate"
             />
-            {localQuery && (
+            {localQuery ? (
               <button
                 onClick={handleClear}
                 className="text-[#8a9990] hover:text-[#14221d] text-xs p-1 cursor-pointer"
                 title="Clear"
               >
                 <X className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <button
+                onClick={handleVoiceSearch}
+                className="text-[#687a71] hover:text-[#174C3C] p-1 cursor-pointer"
+                title="Voice Search"
+              >
+                <Mic className="w-4 h-4" />
               </button>
             )}
             {isLoading && (
@@ -235,10 +291,10 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right: GPS Status & Map/Satellite Toggle (No unnecessary weather/bell/avatar) */}
-        <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto shrink-0">
+        {/* Right: GPS Status & Map/Satellite Toggle (Desktop View) */}
+        <div className="hidden sm:flex items-center gap-2 sm:gap-3 pointer-events-auto shrink-0">
           {/* GPS Status Indicator */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FFF8ED] border border-[#ded5c5] shadow-xs">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#FFF8ED] border border-[#ded5c5] shadow-xs">
             <span
               className={`w-2 h-2 rounded-full ${
                 isWatchingGps ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
@@ -272,8 +328,18 @@ export const Header: React.FC<HeaderProps> = ({
               Satellite
             </button>
           </div>
+
+          {/* Desktop User Avatar */}
+          <button
+            onClick={onOpenMenu}
+            className="w-10 h-10 rounded-full bg-[#174C3C] text-white font-bold text-sm flex items-center justify-center shadow-xs cursor-pointer active:scale-95"
+            title="User Profile"
+          >
+            J
+          </button>
         </div>
       </div>
     </header>
   );
 };
+
